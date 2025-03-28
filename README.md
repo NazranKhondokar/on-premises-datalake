@@ -169,3 +169,129 @@ The updated `./trino-config` directory should now look like this:
 
 - Open Trino in your browser → [http://localhost:8081](http://localhost:8081)
 ---
+
+## **Step 5: Add Apache Airflow (airflow-scheduler, airflow-webserver, airflow-worker)**
+```sh
+  airflow-db:
+    image: postgres:14
+    container_name: airflow-db
+    restart: always
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow_db:/var/lib/postgresql/data
+
+  airflow-webserver:
+    image: apache/airflow:latest
+    container_name: airflow-webserver
+    depends_on:
+      - airflow-db
+    ports:
+      - "8080:8080"
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=CeleryExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+      - AIRFLOW__CELERY__RESULT_BACKEND=db+postgresql://airflow:airflow@airflow-db:5432/airflow
+      - AIRFLOW__CELERY__BROKER_URL=redis://redis:6379/0
+    volumes:
+      - airflow_dags:/opt/airflow/dags
+      - airflow_logs:/opt/airflow/logs
+      - airflow_plugins:/opt/airflow/plugins
+    command: webserver
+
+  airflow-scheduler:
+    image: apache/airflow:latest
+    container_name: airflow-scheduler
+    depends_on:
+      - airflow-db
+      - airflow-webserver
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=CeleryExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+      - AIRFLOW__CELERY__RESULT_BACKEND=db+postgresql://airflow:airflow@airflow-db:5432/airflow
+      - AIRFLOW__CELERY__BROKER_URL=redis://redis:6379/0
+    volumes:
+      - airflow_dags:/opt/airflow/dags
+      - airflow_logs:/opt/airflow/logs
+      - airflow_plugins:/opt/airflow/plugins
+    command: scheduler
+
+  airflow-worker:
+    image: apache/airflow:latest
+    container_name: airflow-worker
+    depends_on:
+      - airflow-scheduler
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=CeleryExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+      - AIRFLOW__CELERY__RESULT_BACKEND=db+postgresql://airflow:airflow@airflow-db:5432/airflow
+      - AIRFLOW__CELERY__BROKER_URL=redis://redis:6379/0
+    volumes:
+      - airflow_dags:/opt/airflow/dags
+      - airflow_logs:/opt/airflow/logs
+      - airflow_plugins:/opt/airflow/plugins
+    command: worker
+
+  redis:
+    image: redis:latest
+    container_name: airflow-redis
+    ports:
+      - "6379:6379"
+    restart: always
+
+volumes:
+  minio_data:
+  postgres_data:
+  airflow_db:
+  airflow_dags:
+  airflow_logs:
+  airflow_plugins:
+```
+
+**Before running Airflow services, need to initialize the database using:**
+
+```sh
+docker-compose run --rm airflow-webserver airflow db init
+```
+
+**Start All Services Again**
+   ```sh
+   docker-compose up -d
+   ```
+
+**Verify Everything is Running**
+   ```sh
+   docker ps
+   ```
+
+#### **Access Web UIs**
+- **MinIO Console** → `http://localhost:9090`  
+- **Trino Web UI** → `http://localhost:8081`  
+- **Apache Airflow Web UI** → `http://localhost:8080` (default login: `airflow/airflow`)  
+- **PostgreSQL (Metastore)** → `postgres://hive:hive@localhost:5432/metastore`  
+- **PostgreSQL (Airflow)** → `postgres://airflow:airflow@localhost:5433/airflow`  
+
+
+By default, **Apache Airflow** creates a user named `admin` with the password `admin`. However, in **Docker-based deployments**, may need to create the user manually.  
+
+#### **Check Default Login Credentials**
+Try logging in with:  
+- **Username:** `admin`  
+- **Password:** `admin`  
+
+#### **Create an Admin User Manually**
+If the default credentials don’t work, create an admin user by running:  
+```sh
+docker-compose run --rm airflow-webserver airflow users create \
+    --username admin \
+    --password admin123 \
+    --firstname Admin \
+    --lastname User \
+    --role Admin \
+    --email admin@example.com
+```
+---
